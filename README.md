@@ -419,7 +419,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions, issues, or collaborations:
 - Open an issue on GitHub
-- Email: [moyanliu@asu.edu]
+- Email: [moyann.liu@gmail.com]
 - Repository: https://github.com/moyan-liu/Lorenz-63-84-control.
 
 ---
