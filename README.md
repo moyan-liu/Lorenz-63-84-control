@@ -6,12 +6,12 @@ Data-driven hybrid control frameworks for the **Lorenz-63** and **Lorenz-84** ch
 
 This repository provides two complementary control systems for different chaotic dynamical models:
 
-### 🌊 **Lorenz-63: Atmospheric Convection**
+### **Lorenz-63: Atmospheric Convection**
 - Simplified model of thermal convection in the atmosphere
 - Control objective: Keep state variables (x, y, z) within safe bounds
 - Application: Preventing extreme convection patterns
 
-### 🌀 **Lorenz-84: Atmospheric Circulation**
+### **Lorenz-84: Atmospheric Circulation**
 - Model of global atmospheric circulation with westerly winds and eddies
 - Control objective: Limit eddy activity |y| + |z| below threshold
 - Application: Maintaining stable atmospheric flow patterns
@@ -22,7 +22,7 @@ Both systems use **adaptive hybrid control** that intelligently switches between
 
 ---
 
-## 🎯 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -47,7 +47,7 @@ python lorenz84_control.py
 
 ---
 
-## 📊 System Comparison
+## System Comparison
 
 | Feature | Lorenz-63 | Lorenz-84 |
 |---------|-----------|-----------|
@@ -64,7 +64,7 @@ python lorenz84_control.py
 
 ---
 
-## 🔬 Methodology
+## Methodology
 
 Both control systems share a common framework:
 
@@ -206,7 +206,7 @@ plot_eddy_activity_comparison(traj_nat, traj, dt=0.01, eddy_threshold=2.4)
 
 ---
 
-## 🎛️ Key Parameters
+## Key Parameters
 
 ### Lorenz-63 Parameters
 
@@ -232,7 +232,7 @@ plot_eddy_activity_comparison(traj_nat, traj, dt=0.01, eddy_threshold=2.4)
 
 ---
 
-## 📈 Performance Benchmarks
+## Performance Benchmarks
 
 ### Lorenz-63 Results (2000 steps, dt=0.01)
 
@@ -258,7 +258,7 @@ plot_eddy_activity_comparison(traj_nat, traj, dt=0.01, eddy_threshold=2.4)
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Test Lorenz-63
 ```bash
@@ -295,7 +295,7 @@ Lorenz-63-84-control/
 
 ---
 
-## 🔧 Advanced Features
+## Advanced Features
 
 ### Parameter Sensitivity Analysis
 
@@ -317,7 +317,7 @@ plot_sensitivity_analysis(results)
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 ### ✅ **Modular Design**
 - All functions independent and reusable
@@ -343,7 +343,7 @@ plot_sensitivity_analysis(results)
 
 ---
 
-## 🎓 Theory Background
+## Theory Background
 
 ### Lorenz-63 System
 
@@ -393,7 +393,7 @@ Our control activates when LLE exceeds a threshold, targeting instability before
 
 ---
 
-## 📚 Key References
+## Key References
 
 ### Lorenz63 & Lorenz84
 1. **Lorenz, E. N. (1963)**. "Deterministic nonperiodic flow." *Journal of the Atmospheric Sciences*, 20(2), 130-141.
@@ -413,7 +413,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📧 Contact
+## Contact
 
 **Author:** Moyan Liu
 
