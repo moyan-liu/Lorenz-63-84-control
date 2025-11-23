@@ -1,12 +1,3 @@
-"""
-Example scripts for Lorenz-63 hybrid control system.
-
-This module contains examples demonstrating:
-1. Basic usage with default parameters
-2. Comparing different initial conditions
-3. Parameter sensitivity analysis
-4. Custom control strategies
-"""
 
 import numpy as np
 import matplotlib.pyplot as plt
