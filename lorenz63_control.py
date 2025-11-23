@@ -1,5 +1,5 @@
 """
-Lorenz-63 Hybrid Control System
+Lorenz-63 Adaptive Control 
 ================================
 
 A data-driven hybrid control framework for the Lorenz-63 chaotic system.
@@ -23,23 +23,7 @@ import time
 # ==============================================================================
 
 def lorenz63(t, state, sigma=10.0, rho=28.0, beta=8/3):
-    """
-    Lorenz-63 differential equations.
 
-    Parameters
-    ----------
-    t : float
-        Time (not used, but required by solve_ivp)
-    state : array-like, shape (3,)
-        Current state [x, y, z]
-    sigma, rho, beta : float
-        Lorenz-63 parameters
-
-    Returns
-    -------
-    list
-        Derivatives [dx/dt, dy/dt, dz/dt]
-    """
     x, y, z = state
     dxdt = sigma * (y - x)
     dydt = x * (rho - z) - y
@@ -54,33 +38,7 @@ def lorenz63(t, state, sigma=10.0, rho=28.0, beta=8/3):
 def train_surrogate_model(t_end=100.0, dt=0.01, initial_state=None,
                          poly_degree=2, ridge_alpha=1e-6,
                          sigma=10.0, rho=28.0, beta=8/3):
-    """
-    Train polynomial ridge regression surrogate model for Lorenz-63 dynamics.
 
-    Parameters
-    ----------
-    t_end : float
-        Total time for data generation
-    dt : float
-        Time step
-    initial_state : array-like, optional
-        Initial condition [x0, y0, z0]. Default: [1.0, 1.0, 1.0]
-    poly_degree : int
-        Polynomial feature degree
-    ridge_alpha : float
-        Ridge regression regularization parameter
-    sigma, rho, beta : float
-        Lorenz-63 parameters
-
-    Returns
-    -------
-    ridge : sklearn Ridge model
-        Trained surrogate model
-    poly : sklearn PolynomialFeatures
-        Polynomial feature transformer
-    X : ndarray, shape (n_samples, 3)
-        Training data states
-    """
     if initial_state is None:
         initial_state = [1.0, 1.0, 1.0]
 
@@ -109,27 +67,7 @@ def train_surrogate_model(t_end=100.0, dt=0.01, initial_state=None,
 # ==============================================================================
 
 def jacobian_lle(x, ridge, poly, dt, eps=1e-5):
-    """
-    Compute local Lyapunov exponent (LLE) using surrogate model Jacobian.
 
-    Parameters
-    ----------
-    x : array-like, shape (3,)
-        Current state
-    ridge : sklearn Ridge model
-        Trained surrogate model
-    poly : sklearn PolynomialFeatures
-        Polynomial feature transformer
-    dt : float
-        Time step
-    eps : float
-        Finite difference step size
-
-    Returns
-    -------
-    float
-        Maximum real eigenvalue of Jacobian (local Lyapunov exponent)
-    """
     J = np.zeros((3, 3))
     for i in range(3):
         dx = np.zeros(3)
@@ -149,37 +87,7 @@ def jacobian_lle(x, ridge, poly, dt, eps=1e-5):
 def control_optimization_with_noise(X_sample, ridge, poly, ranges, dt,
                                    steps_ahead, max_perturbation, noise_std,
                                    penalty_weight=100.0):
-    """
-    Optimize control perturbation with noise-aware forecasting.
 
-    Parameters
-    ----------
-    X_sample : array-like, shape (3,)
-        Current state sample
-    ridge : sklearn Ridge model
-        Trained surrogate model
-    poly : sklearn PolynomialFeatures
-        Polynomial feature transformer
-    ranges : list of tuples
-        Allowable bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
-    dt : float
-        Time step
-    steps_ahead : int
-        Forecast horizon for optimization
-    max_perturbation : float
-        Maximum allowed control magnitude
-    noise_std : float
-        Standard deviation of observation noise (applied to y-variable)
-    penalty_weight : float
-        Weight for constraint violation penalty
-
-    Returns
-    -------
-    u : ndarray, shape (3,)
-        Optimal control perturbation
-    obj_val : float
-        Objective function value
-    """
     def forecast_with_noise(u):
         """Forecast trajectory with control and noise."""
         state = X_sample + u
@@ -236,60 +144,7 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
                                ensemble_size, noise_level, max_attempts,
                                noise_std, sigma=10.0, rho=28.0, beta=8/3,
                                verbose=True):
-    """
-    Simulate Lorenz-63 system with hybrid LLE-based control.
 
-    The control strategy:
-    1. Compute local Lyapunov exponent (LLE) at each step
-    2. If LLE ≤ threshold: use natural dynamics (no control)
-    3. If LLE > threshold: optimize control perturbation to keep trajectory in bounds
-
-    Parameters
-    ----------
-    X_init : array-like, shape (3,)
-        Initial state [x0, y0, z0]
-    ridge : sklearn Ridge model
-        Trained surrogate model
-    poly : sklearn PolynomialFeatures
-        Polynomial feature transformer
-    dt : float
-        Time step
-    total_steps : int
-        Number of simulation steps
-    ranges : list of tuples
-        Allowable bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
-    max_perturbation : float
-        Maximum allowed control magnitude
-    lle_threshold : float
-        LLE threshold for control activation
-    steps_ahead_opt : int
-        Forecast horizon for control optimization
-    steps_ahead_check : int
-        Verification horizon after control application
-    ensemble_size : int
-        Number of ensemble members for sampling
-    noise_level : float
-        Ensemble perturbation standard deviation
-    max_attempts : int
-        Maximum optimization attempts per control step
-    noise_std : float
-        Observation noise standard deviation
-    sigma, rho, beta : float
-        Lorenz-63 parameters
-    verbose : bool
-        Print progress information
-
-    Returns
-    -------
-    traj : ndarray, shape (total_steps+1, 3)
-        State trajectory
-    u_record : ndarray, shape (total_steps, 3)
-        Control perturbations applied at each step
-    lle_record : ndarray, shape (total_steps,)
-        LLE values at each step
-    opt_time_list : ndarray
-        Optimization times (only for controlled steps)
-    """
     X = X_init.copy()
     traj = [X.copy()]
     u_record = []
@@ -385,20 +240,7 @@ def plot_trajectories_comparison(traj_natural, traj_controlled,
                                  title1="Natural Lorenz-63",
                                  title2="Controlled Lorenz-63",
                                  figsize=(14, 6)):
-    """
-    Plot natural vs controlled trajectories side by side.
 
-    Parameters
-    ----------
-    traj_natural : ndarray, shape (n, 3)
-        Natural trajectory
-    traj_controlled : ndarray, shape (n, 3)
-        Controlled trajectory
-    title1, title2 : str
-        Plot titles
-    figsize : tuple
-        Figure size
-    """
     fig = plt.figure(figsize=figsize)
 
     # Natural trajectory
@@ -422,20 +264,7 @@ def plot_trajectories_comparison(traj_natural, traj_controlled,
 
 
 def plot_control_analysis(u_record, lle_record, traj, dt):
-    """
-    Plot control effort and energy analysis.
 
-    Parameters
-    ----------
-    u_record : ndarray, shape (n, 3)
-        Control perturbations
-    lle_record : ndarray, shape (n,)
-        LLE values
-    traj : ndarray, shape (n+1, 3)
-        State trajectory
-    dt : float
-        Time step
-    """
     control_mag = np.linalg.norm(u_record, axis=1)
     energy_traj = np.sum(traj**2, axis=1)
     energy_pert = control_mag**2
@@ -504,21 +333,7 @@ def plot_control_analysis(u_record, lle_record, traj, dt):
 
 
 def compute_bounds_violation(traj, ranges):
-    """
-    Compute percentage of trajectory outside bounds.
 
-    Parameters
-    ----------
-    traj : ndarray, shape (n, 3)
-        Trajectory
-    ranges : list of tuples
-        Bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
-
-    Returns
-    -------
-    dict
-        Violation percentages for each dimension
-    """
     violations = {}
     var_names = ['x', 'y', 'z']
 
@@ -536,25 +351,7 @@ def compute_bounds_violation(traj, ranges):
 # ==============================================================================
 
 def run_example(X_init=None, total_steps=2000, dt=0.01, verbose=True):
-    """
-    Run a complete example of Lorenz-63 hybrid control.
 
-    Parameters
-    ----------
-    X_init : array-like, optional
-        Initial state. Default: [1.0, 1.0, 1.0]
-    total_steps : int
-        Number of simulation steps
-    dt : float
-        Time step
-    verbose : bool
-        Print progress
-
-    Returns
-    -------
-    dict
-        Results containing trajectories, controls, model, etc.
-    """
     if X_init is None:
         X_init = np.array([1.0, 1.0, 1.0])
 
