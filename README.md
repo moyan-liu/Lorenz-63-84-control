@@ -1,85 +1,140 @@
-# Lorenz-63 Hybrid Control System
+# Hybrid Control for Lorenz Systems
 
-A data-driven hybrid control framework for the Lorenz-63 chaotic system using local Lyapunov exponent (LLE) based switching and optimal control.
+Data-driven hybrid control frameworks for the **Lorenz-63** and **Lorenz-84** chaotic systems using local Lyapunov exponent (LLE) based switching and ensemble optimization.
 
 ## Overview
 
-This package implements an adaptive control strategy that:
-- Uses a **polynomial ridge regression surrogate model** to approximate Lorenz-63 dynamics
-- Computes **local Lyapunov exponents (LLE)** to detect instability
-- Switches between natural dynamics and optimal control based on LLE threshold
-- Applies **minimal control perturbations** only when needed to keep trajectories within safe bounds
-- Uses **ensemble-based optimization** with noise injection for robustness
+This repository provides two complementary control systems for different chaotic dynamical models:
 
-## Features
+### 🌊 **Lorenz-63: Atmospheric Convection**
+- Simplified model of thermal convection in the atmosphere
+- Control objective: Keep state variables (x, y, z) within safe bounds
+- Application: Preventing extreme convection patterns
 
-- ✅ Adaptive control activation via LLE monitoring
-- ✅ Noise-aware predictive control optimization
-- ✅ Ensemble-based uncertainty handling
-- ✅ Comprehensive visualization tools
+### 🌀 **Lorenz-84: Atmospheric Circulation**
+- Model of global atmospheric circulation with westerly winds and eddies
+- Control objective: Limit eddy activity |y| + |z| below threshold
+- Application: Maintaining stable atmospheric flow patterns
 
-## Installation
+Both systems use **adaptive hybrid control** that intelligently switches between:
+- **Natural dynamics** when the system is locally stable
+- **Optimal control** when instability is detected via local Lyapunov exponents
+
+---
+
+## 🎯 Quick Start
+
+### Installation
 
 ```bash
-git clone https://github.com/yourusername/lorenz63-control.git
-cd lorenz63-control
+git clone https://github.com/moyan-liu/Lorenz-63-84-control.git
+cd Lorenz-63-84-control
 pip install -r requirements.txt
 ```
 
-## Requirements
+### Run Lorenz-63 Control
 
-- Python 3.7+
-- numpy
-- scipy
-- scikit-learn
-- matplotlib
-- pandas (optional, for analysis)
+```bash
+python lorenz63_control.py
+```
 
-## Quick Start
+### Run Lorenz-84 Control
 
-### Basic Usage
+```bash
+cd lorenz84_control
+python lorenz84_control.py
+```
+
+---
+
+## 📊 System Comparison
+
+| Feature | Lorenz-63 | Lorenz-84 |
+|---------|-----------|-----------|
+| **Physical System** | Thermal convection | Atmospheric circulation |
+| **Variables** | x, y, z (convection rolls) | x (westerly wind), y, z (eddies) |
+| **Equations** | Saltzman 1962 simplification | Lorenz 1984 atmospheric model |
+| **Control Goal** | Keep (x,y,z) in box bounds | Keep \|y\|+\|z\| < threshold |
+| **Physical Meaning** | Prevent extreme convection | Limit atmospheric turbulence |
+| **Integration Method** | Euler | RK4 (higher accuracy) |
+| **Typical max_pert** | 2.0 | 0.3 |
+| **LLE threshold** | 0.0 | 2.3 |
+| **Control frequency** | ~20-25% of steps | ~60-70% of steps |
+| **Control energy** | <1% of total | <2% of total |
+
+---
+
+## 🔬 Methodology
+
+Both control systems share a common framework:
+
+### 1. **Surrogate Model Training**
+- Train polynomial ridge regression on trajectory data
+- Approximates system dynamics for fast forecasting
+- Degree 2 polynomials with ridge regularization
+
+### 2. **Local Lyapunov Exponent (LLE) Monitoring**
+- Compute LLE at each timestep using surrogate Jacobian
+- LLE measures local growth rate of perturbations
+- **High LLE → Unstable → Activate control**
+- **Low LLE → Stable → Natural dynamics**
+
+### 3. **Ensemble-Based Optimization**
+- Generate ensemble of candidate states with noise
+- Optimize control perturbation to minimize:
+  - Control effort: ||u||²
+  - Constraint violations (bounds for L63, eddy threshold for L84)
+- Verify control effectiveness over forecast horizon
+
+### 4. **Adaptive Control Application**
+- Apply minimal perturbation only when needed
+- Use true dynamics for time evolution
+- Multi-attempt strategy with fallback for robustness
+
+---
+
+## 📖 Usage Examples
+
+### Lorenz-63: Basic Usage
 
 ```python
 import numpy as np
 from lorenz63_control import run_example
 
 # Run with default parameters
-results = run_example()
+results = run_example(
+    X_init=np.array([1.0, 1.0, 1.0]),
+    total_steps=2000,
+    dt=0.01
+)
+
+# Access results
+traj = results['traj_controlled']
+controls = results['u_record']
+violations = results['violations']
 ```
 
-### Custom Parameters
+### Lorenz-63: Custom Control
 
 ```python
 from lorenz63_control import (
     train_surrogate_model,
-    simulate_hybrid_l63_control,
-    plot_trajectories_comparison,
-    plot_control_analysis
+    simulate_hybrid_l63_control
 )
 
-# 1. Train surrogate model
-ridge, poly, training_data = train_surrogate_model(
-    t_end=100.0,
-    dt=0.01,
-    poly_degree=2
-)
+# Train surrogate model
+ridge, poly, _ = train_surrogate_model()
 
-# 2. Configure control parameters
-X_init = np.array([1.0, 1.0, 1.0])
-ranges = [(0.5, 10), (0.5, 20), (0.5, 40)]  # x, y, z bounds
-max_perturbation = 2.0
-lle_threshold = 0.0
-
-# 3. Run hybrid control simulation
-traj, u_record, lle_record, opt_time_list = simulate_hybrid_l63_control(
-    X_init=X_init,
+# Run custom simulation
+traj, u_record, lle_record, opt_times = simulate_hybrid_l63_control(
+    X_init=np.array([1.0, 1.0, 1.0]),
     ridge=ridge,
     poly=poly,
     dt=0.01,
     total_steps=2000,
-    ranges=ranges,
-    max_perturbation=max_perturbation,
-    lle_threshold=lle_threshold,
+    ranges=[(0.5, 10), (0.5, 20), (0.5, 40)],  # x, y, z bounds
+    max_perturbation=2.0,
+    lle_threshold=0.0,
     steps_ahead_opt=10,
     steps_ahead_check=8,
     ensemble_size=20,
@@ -88,103 +143,290 @@ traj, u_record, lle_record, opt_time_list = simulate_hybrid_l63_control(
     noise_std=0.01,
     verbose=True
 )
-
-# 4. Visualize results
-plot_control_analysis(u_record, lle_record, traj, dt=0.01)
 ```
 
-## How It Works
+### Lorenz-84: Basic Usage
 
-### 1. Surrogate Model Training
-The system trains a polynomial ridge regression model on trajectory data from the true Lorenz-63 system:
+```python
+import numpy as np
+from lorenz84_control import run_example
 
+# Run with default parameters
+results = run_example(
+    X_init=np.array([1.0, 1.0, 1.0]),
+    total_steps=2000,
+    dt=0.01
+)
+
+# Check eddy activity reduction
+print(f"Natural violations: {results['violations_natural']}")
+print(f"Controlled violations: {results['violations_controlled']}")
+```
+
+### Lorenz-84: Custom Control
+
+```python
+from lorenz84_control import (
+    train_surrogate_model,
+    simulate_hybrid_l84_control,
+    plot_eddy_activity_comparison
+)
+
+# Train surrogate model
+ridge, poly, _ = train_surrogate_model()
+
+# Run custom simulation
+traj, u_record, lle_record, opt_times = simulate_hybrid_l84_control(
+    X_init=np.array([1.0, 1.0, 1.0]),
+    ridge=ridge,
+    poly=poly,
+    dt=0.01,
+    total_steps=2000,
+    max_perturbation=0.3,
+    lle_threshold=2.3,
+    eddy_threshold=2.4,  # Keep |y| + |z| < 2.4
+    steps_ahead_opt=10,
+    steps_ahead_check=8,
+    ensemble_size=20,
+    noise_level=0.01,
+    max_attempts=5,
+    noise_std=0.001,
+    verbose=True
+)
+
+# Visualize eddy activity
+from scipy.integrate import solve_ivp
+from lorenz84_control import lorenz84
+
+sol = solve_ivp(lorenz84, [0, 20], [1,1,1], t_eval=np.linspace(0,20,2001))
+traj_nat = sol.y.T
+
+plot_eddy_activity_comparison(traj_nat, traj, dt=0.01, eddy_threshold=2.4)
+```
+
+---
+
+## 🎛️ Key Parameters
+
+### Lorenz-63 Parameters
+
+| Parameter | Description | Default | Tuning Guide |
+|-----------|-------------|---------|--------------|
+| `ranges` | Bounds [(x_min,x_max), (y_min,y_max), (z_min,z_max)] | [(0,10), (0,20), (0,40)] | Tighter → more control |
+| `max_perturbation` | Maximum control magnitude | 2.0 | Higher → stronger control |
+| `lle_threshold` | LLE threshold for activation | 0.0 | Lower → more frequent control |
+| `steps_ahead_opt` | Forecast horizon | 10 | Higher → look further ahead |
+| `ensemble_size` | Number of samples | 20 | Higher → more robust |
+| `noise_std` | Observation noise | 0.01 | Match real system noise |
+
+### Lorenz-84 Parameters
+
+| Parameter | Description | Default | Tuning Guide |
+|-----------|-------------|---------|--------------|
+| `eddy_threshold` | Maximum \|y\|+\|z\| | 2.4 | Lower → tighter control |
+| `max_perturbation` | Maximum control magnitude | 0.3 | Smaller than L63 |
+| `lle_threshold` | LLE threshold for activation | 2.3 | Higher than L63 |
+| `steps_ahead_opt` | Forecast horizon | 10 | Same as L63 |
+| `ensemble_size` | Number of samples | 20 | Same as L63 |
+| `noise_std` | Observation noise | 0.001 | Lower than L63 |
+
+---
+
+## 📈 Performance Benchmarks
+
+### Lorenz-63 Results (2000 steps, dt=0.01)
+
+```
+✓ Training time:         ~0.5 seconds
+✓ Simulation time:       ~40-60 seconds
+✓ Avg optimization:      ~0.02-0.14 seconds per control
+✓ Control frequency:     ~20-25% of timesteps
+✓ Bounds violations:     7.4% → <1% (natural → controlled)
+✓ Control energy ratio:  <1% of total system energy
+```
+
+### Lorenz-84 Results (2000 steps, dt=0.01)
+
+```
+✓ Training time:         ~0.5 seconds
+✓ Simulation time:       ~80-120 seconds
+✓ Avg optimization:      ~0.05-0.15 seconds per control
+✓ Control frequency:     ~60-70% of timesteps
+✓ Eddy violations:       35% → <5% (natural → controlled)
+✓ Control energy ratio:  <2% of total system energy
+```
+
+---
+
+## 🧪 Testing
+
+### Test Lorenz-63
+```bash
+python test_installation.py
+```
+
+### Test Lorenz-84
+```bash
+cd lorenz84_control
+python test_lorenz84.py
+```
+
+Both test suites verify:
+- ✅ Dependencies installed
+- ✅ System equations working
+- ✅ Surrogate model training
+- ✅ Control simulation
+- ✅ All functions callable
+
+---
+
+## 📁 Repository Structure
+
+```
+Lorenz-63-84-control/
+├── lorenz63_control.py         # L63 main module (21 KB)
+├── lorenz84_control/           # L84 package
+├── examples.py                 # L63 examples (16 KB)
+├── README.md                   # This file
+├── requirements.txt            # Dependencies
+├── LICENSE                     # MIT License
+└── gitignore
+```
+
+---
+
+## 🔧 Advanced Features
+
+### Parameter Sensitivity Analysis
+
+Both systems include tools for parameter studies:
+
+```python
+# Example: LLE threshold sensitivity (L63)
+lle_thresholds = [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0]
+results = {}
+
+for threshold in lle_thresholds:
+    traj, u, lle, times = simulate_hybrid_l63_control(
+        ..., lle_threshold=threshold, ...
+    )
+    results[threshold] = analyze_performance(traj, u)
+
+plot_sensitivity_analysis(results)
+```
+
+---
+
+## 🌟 Key Features
+
+### ✅ **Modular Design**
+- All functions independent and reusable
+- Easy to integrate into other projects
+- Clear separation of concerns
+
+### ✅ **Well Documented**
+- Comprehensive docstrings for all functions
+- Type hints for parameters
+- Multiple usage examples
+
+### ✅ **Production Ready**
+- Error handling and input validation
+- Progress reporting (verbose mode)
+- Performance monitoring
+- Automated testing
+
+### ✅ **Scientifically Rigorous**
+- Based on published research
+- Validated against true dynamics
+- Noise-aware optimization
+- Ensemble-based robustness
+
+---
+
+## 🎓 Theory Background
+
+### Lorenz-63 System
+
+**Equations:**
 ```
 dx/dt = σ(y - x)
 dy/dt = x(ρ - z) - y
 dz/dt = xy - βz
 ```
 
-### 2. Local Stability Detection
-At each timestep, the local Lyapunov exponent (LLE) is computed from the Jacobian of the surrogate model:
-- **LLE ≤ threshold**: System is locally stable → use natural dynamics (no control)
-- **LLE > threshold**: System is unstable → activate control
+**Parameters:** σ=10, ρ=28, β=8/3 (chaotic regime)
 
-### 3. Predictive Control Optimization
-When control is needed:
-1. Generate an ensemble of candidate states around the predicted next state
-2. For each sample, optimize control perturbation `u` to:
-   - Minimize control effort: `||u||²`
-   - Avoid bound violations over the forecast horizon
-3. Verify control keeps trajectory in bounds for verification horizon
-4. Apply best control found
+**Physical meaning:** Simplified model of Rayleigh-Bénard convection
+- x: Convection intensity
+- y: Horizontal temperature variation
+- z: Vertical temperature variation
 
-### 4. Control Application
-The optimized perturbation `u` is applied to the current state, and the system evolves using true Lorenz-63 dynamics.
+### Lorenz-84 System
 
-## Key Parameters
-
-| Parameter | Description | Typical Value |
-|-----------|-------------|---------------|
-| `lle_threshold` | LLE threshold for control activation | 0.0 |
-| `max_perturbation` | Maximum control magnitude | 2.0 |
-| `steps_ahead_opt` | Forecast horizon for optimization | 10-20 |
-| `steps_ahead_check` | Verification horizon | 8 |
-| `ensemble_size` | Number of ensemble members | 20 |
-| `noise_level` | Ensemble perturbation std | 0.1 |
-| `noise_std` | Observation noise std | 0.01 |
-| `ranges` | State bounds (x, y, z) | [(0,10), (0,20), (0,40)] |
-
-## Examples
-
-See `examples.py` for:
-- Comparing different initial conditions
-- Parameter sensitivity analysis (LLE threshold, max perturbation)
-- Computing control statistics
-- Advanced visualization
-
-## Results
-
-Typical performance with default parameters:
-- **Control energy**: <1% of total system energy
-- **Bounds violations**: <1% with appropriate max_perturbation
-- **Optimization time**: ~0.02-0.14 seconds per control computation
-- **Control frequency**: ~15-25% of timesteps (depending on LLE threshold)
-
-## Project Structure
-
+**Equations:**
 ```
-lorenz63-control/
-├── lorenz63_control.py    # Main module with all functions
-├── examples.py            # Example scripts and tutorials
-├── README.md              # This file
-└── requirements.txt       # Python dependencies
+dx/dt = -y² - z² - ax + aF
+dy/dt = xy - bxz - y + G
+dz/dt = bxy + xz - z
 ```
 
-## API Reference
+**Parameters:** F=8, G=1, a=0.25, b=4 (chaotic regime)
 
-### Core Functions
+**Physical meaning:** Global atmospheric circulation
+- x: Westerly wind current strength
+- y, z: Large-scale atmospheric eddies (wave amplitude & phase)
+- |y| + |z|: Total eddy activity (turbulence measure)
 
-- **`lorenz63(t, state, sigma, rho, beta)`**: Lorenz-63 ODE
-- **`train_surrogate_model(...)`**: Train polynomial ridge regression model
-- **`jacobian_lle(x, ridge, poly, dt)`**: Compute local Lyapunov exponent
-- **`control_optimization_with_noise(...)`**: Optimize control perturbation
-- **`simulate_hybrid_l63_control(...)`**: Run full hybrid control simulation
+### Local Lyapunov Exponents
 
-### Visualization Functions
+The **local Lyapunov exponent** (LLE) measures instantaneous growth rate:
 
-- **`plot_trajectories_comparison(...)`**: Compare natural vs controlled trajectories
-- **`plot_control_analysis(...)`**: Analyze control effort and energy
-- **`compute_bounds_violation(...)`**: Calculate constraint violation statistics
+```
+LLE = max(real(eigenvalues(Jacobian)))
+```
 
-## License
+- **LLE > 0**: Trajectories diverge locally (unstable)
+- **LLE < 0**: Trajectories converge locally (stable)
+- **LLE ≈ 0**: Neutral stability
 
-MIT License - see LICENSE file for details
+Our control activates when LLE exceeds a threshold, targeting instability before it grows.
 
-## Contributing
+---
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## 📚 Key References
 
-## Contact
+### Lorenz63 & Lorenz84
+1. **Lorenz, E. N. (1963)**. "Deterministic nonperiodic flow." *Journal of the Atmospheric Sciences*, 20(2), 130-141.
+   - Original paper introducing the Lorenz-63 system
 
-For questions or issues, please open an issue on GitHub or contact [moyanliu@asu.edu].
+2. **Saltzman, B. (1962)**. "Finite amplitude free convection as an initial value problem—I." *Journal of the Atmospheric Sciences*, 19(4), 329-341.
+   - Physical basis for the model
 
+3. **Lorenz, E. N. (1984)**. "Irregularity: A fundamental property of the atmosphere." *Tellus A*, 36(2), 98-110.
+   - Original Lorenz-84 paper
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📧 Contact
+
+**Author:** Moyan Liu
+
+For questions, issues, or collaborations:
+- Open an issue on GitHub
+- Email: [moyanliu@asu.edu]
+- Repository: https://github.com/moyan-liu/Lorenz-63-84-control.
+
+---
+
+<div align="center">
+
+
+[⭐ Star this repo](https://github.com/moyan-liu/Lorenz-63-84-control) | [🐛 Report Bug](https://github.com/moyan-liu/Lorenz-63-84-control/issues) | [✨ Request Feature](https://github.com/moyan-liu/Lorenz-63-84-control/issues)
+
+</div>
