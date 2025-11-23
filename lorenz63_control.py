@@ -1,0 +1,668 @@
+"""
+Lorenz-63 Hybrid Control System
+================================
+
+A data-driven hybrid control framework for the Lorenz-63 chaotic system.
+Uses local Lyapunov exponent (LLE) based switching between natural dynamics
+and optimal control to keep trajectories within specified bounds.
+
+Author: Moyan Liu
+"""
+
+import numpy as np
+from scipy.integrate import solve_ivp
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import Ridge
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+import time
+
+
+# ==============================================================================
+# Lorenz-63 Dynamics
+# ==============================================================================
+
+def lorenz63(t, state, sigma=10.0, rho=28.0, beta=8/3):
+    """
+    Lorenz-63 differential equations.
+
+    Parameters
+    ----------
+    t : float
+        Time (not used, but required by solve_ivp)
+    state : array-like, shape (3,)
+        Current state [x, y, z]
+    sigma, rho, beta : float
+        Lorenz-63 parameters
+
+    Returns
+    -------
+    list
+        Derivatives [dx/dt, dy/dt, dz/dt]
+    """
+    x, y, z = state
+    dxdt = sigma * (y - x)
+    dydt = x * (rho - z) - y
+    dzdt = x * y - beta * z
+    return [dxdt, dydt, dzdt]
+
+
+# ==============================================================================
+# Surrogate Model Training
+# ==============================================================================
+
+def train_surrogate_model(t_end=100.0, dt=0.01, initial_state=None,
+                         poly_degree=2, ridge_alpha=1e-6,
+                         sigma=10.0, rho=28.0, beta=8/3):
+    """
+    Train polynomial ridge regression surrogate model for Lorenz-63 dynamics.
+
+    Parameters
+    ----------
+    t_end : float
+        Total time for data generation
+    dt : float
+        Time step
+    initial_state : array-like, optional
+        Initial condition [x0, y0, z0]. Default: [1.0, 1.0, 1.0]
+    poly_degree : int
+        Polynomial feature degree
+    ridge_alpha : float
+        Ridge regression regularization parameter
+    sigma, rho, beta : float
+        Lorenz-63 parameters
+
+    Returns
+    -------
+    ridge : sklearn Ridge model
+        Trained surrogate model
+    poly : sklearn PolynomialFeatures
+        Polynomial feature transformer
+    X : ndarray, shape (n_samples, 3)
+        Training data states
+    """
+    if initial_state is None:
+        initial_state = [1.0, 1.0, 1.0]
+
+    # Generate training data
+    t_eval = np.arange(0, t_end, dt)
+    sol = solve_ivp(lorenz63, [0, t_end], initial_state, t_eval=t_eval,
+                   args=(sigma, rho, beta))
+    X = sol.y.T
+
+    # Compute derivatives at each point
+    dX = np.array([lorenz63(0, x, sigma, rho, beta) for x in X])
+
+    # Train polynomial ridge regression
+    poly = PolynomialFeatures(degree=poly_degree)
+    X_poly = poly.fit_transform(X)
+    ridge = Ridge(alpha=ridge_alpha)
+    ridge.fit(X_poly, dX)
+
+    print(f"✓ Surrogate model trained on {len(X)} samples")
+
+    return ridge, poly, X
+
+
+# ==============================================================================
+# Local Lyapunov Exponent
+# ==============================================================================
+
+def jacobian_lle(x, ridge, poly, dt, eps=1e-5):
+    """
+    Compute local Lyapunov exponent (LLE) using surrogate model Jacobian.
+
+    Parameters
+    ----------
+    x : array-like, shape (3,)
+        Current state
+    ridge : sklearn Ridge model
+        Trained surrogate model
+    poly : sklearn PolynomialFeatures
+        Polynomial feature transformer
+    dt : float
+        Time step
+    eps : float
+        Finite difference step size
+
+    Returns
+    -------
+    float
+        Maximum real eigenvalue of Jacobian (local Lyapunov exponent)
+    """
+    J = np.zeros((3, 3))
+    for i in range(3):
+        dx = np.zeros(3)
+        dx[i] = eps
+        f_plus = ridge.predict(poly.transform([x + dx]))[0]
+        f_minus = ridge.predict(poly.transform([x - dx]))[0]
+        J[:, i] = (f_plus - f_minus) / (2 * eps)
+
+    lle = max(np.real(np.linalg.eigvals(J)))
+    return lle
+
+
+# ==============================================================================
+# Control Optimization
+# ==============================================================================
+
+def control_optimization_with_noise(X_sample, ridge, poly, ranges, dt,
+                                   steps_ahead, max_perturbation, noise_std,
+                                   penalty_weight=100.0):
+    """
+    Optimize control perturbation with noise-aware forecasting.
+
+    Parameters
+    ----------
+    X_sample : array-like, shape (3,)
+        Current state sample
+    ridge : sklearn Ridge model
+        Trained surrogate model
+    poly : sklearn PolynomialFeatures
+        Polynomial feature transformer
+    ranges : list of tuples
+        Allowable bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
+    dt : float
+        Time step
+    steps_ahead : int
+        Forecast horizon for optimization
+    max_perturbation : float
+        Maximum allowed control magnitude
+    noise_std : float
+        Standard deviation of observation noise (applied to y-variable)
+    penalty_weight : float
+        Weight for constraint violation penalty
+
+    Returns
+    -------
+    u : ndarray, shape (3,)
+        Optimal control perturbation
+    obj_val : float
+        Objective function value
+    """
+    def forecast_with_noise(u):
+        """Forecast trajectory with control and noise."""
+        state = X_sample + u
+        traj = []
+
+        for step in range(steps_ahead):
+            dx = ridge.predict(poly.transform([state]))[0]
+            state = state + dt * dx
+
+            # Add noise to y-component
+            output = state.copy()
+            noise_y = noise_std * output[1] * np.random.randn()
+            output[1] += noise_y
+
+            traj.append(output)
+
+        return np.array(traj)
+
+    def objective(u):
+        """Objective: minimize control effort + bound violations."""
+        traj = forecast_with_noise(u)
+        penalty = sum(
+            max(0, low - state[i])**2 + max(0, state[i] - high)**2
+            for state in traj for i, (low, high) in enumerate(ranges)
+        )
+        return np.linalg.norm(u)**2 + penalty_weight * penalty
+
+    # Optimization constraints
+    constraints = [
+        {'type': 'ineq', 'fun': lambda u: max_perturbation - np.linalg.norm(u)}
+    ]
+
+    u0 = np.zeros(3)
+    result = minimize(
+        objective, u0,
+        bounds=[(-max_perturbation, max_perturbation)] * 3,
+        constraints=constraints,
+        method='SLSQP'
+    )
+
+    if result.success:
+        return result.x, objective(result.x)
+    else:
+        return np.zeros(3), np.inf
+
+
+# ==============================================================================
+# Hybrid Control Simulation
+# ==============================================================================
+
+def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
+                               ranges, max_perturbation, lle_threshold,
+                               steps_ahead_opt, steps_ahead_check,
+                               ensemble_size, noise_level, max_attempts,
+                               noise_std, sigma=10.0, rho=28.0, beta=8/3,
+                               verbose=True):
+    """
+    Simulate Lorenz-63 system with hybrid LLE-based control.
+
+    The control strategy:
+    1. Compute local Lyapunov exponent (LLE) at each step
+    2. If LLE ≤ threshold: use natural dynamics (no control)
+    3. If LLE > threshold: optimize control perturbation to keep trajectory in bounds
+
+    Parameters
+    ----------
+    X_init : array-like, shape (3,)
+        Initial state [x0, y0, z0]
+    ridge : sklearn Ridge model
+        Trained surrogate model
+    poly : sklearn PolynomialFeatures
+        Polynomial feature transformer
+    dt : float
+        Time step
+    total_steps : int
+        Number of simulation steps
+    ranges : list of tuples
+        Allowable bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
+    max_perturbation : float
+        Maximum allowed control magnitude
+    lle_threshold : float
+        LLE threshold for control activation
+    steps_ahead_opt : int
+        Forecast horizon for control optimization
+    steps_ahead_check : int
+        Verification horizon after control application
+    ensemble_size : int
+        Number of ensemble members for sampling
+    noise_level : float
+        Ensemble perturbation standard deviation
+    max_attempts : int
+        Maximum optimization attempts per control step
+    noise_std : float
+        Observation noise standard deviation
+    sigma, rho, beta : float
+        Lorenz-63 parameters
+    verbose : bool
+        Print progress information
+
+    Returns
+    -------
+    traj : ndarray, shape (total_steps+1, 3)
+        State trajectory
+    u_record : ndarray, shape (total_steps, 3)
+        Control perturbations applied at each step
+    lle_record : ndarray, shape (total_steps,)
+        LLE values at each step
+    opt_time_list : ndarray
+        Optimization times (only for controlled steps)
+    """
+    X = X_init.copy()
+    traj = [X.copy()]
+    u_record = []
+    lle_record = []
+    opt_time_list = []
+
+    for step in range(total_steps):
+        # Compute local Lyapunov exponent
+        lle = jacobian_lle(X, ridge, poly, dt)
+        lle_record.append(lle)
+
+        if verbose:
+            print(f"Step {step+1:03d} | State: {X.round(4)} | LLE: {lle:.4f}")
+
+        if lle <= lle_threshold:
+            # Natural dynamics - no control needed
+            dx = lorenz63(0, X, sigma, rho, beta)
+            X += dt * np.array(dx)
+            u = np.zeros(3)
+            if verbose:
+                print(f"✅ Natural run at step {step+1}")
+
+        else:
+            # Control needed - optimize perturbation
+            control_success = False
+            attempt_count = 0
+
+            # Generate ensemble around predicted next state
+            dx = np.array(lorenz63(0, X, sigma, rho, beta))
+            X_new = X + dt * dx
+            ensemble = X_new + np.random.normal(0, noise_level, (ensemble_size, 3))
+
+            candidate_controls = []
+
+            while not control_success and attempt_count < max_attempts:
+                attempt_count += 1
+                X_sample = ensemble[np.random.choice(ensemble_size)]
+
+                if verbose:
+                    print(f"🔁 Optimization attempt {attempt_count}...")
+
+                # Optimize control
+                start_time = time.time()
+                u, obj_val = control_optimization_with_noise(
+                    X_sample, ridge, poly, ranges, dt, steps_ahead_opt,
+                    max_perturbation, noise_std
+                )
+                opt_time = time.time() - start_time
+                opt_time_list.append(opt_time)
+
+                # Verify control effectiveness
+                state = X_sample + u
+                control_success = True
+                for _ in range(steps_ahead_check):
+                    dx = ridge.predict(poly.transform([state]))[0]
+                    state += dt * dx
+                    if not all(low <= state[i] <= high
+                             for i, (low, high) in enumerate(ranges)):
+                        control_success = False
+                        if verbose:
+                            print(f"🔄 Attempt {attempt_count} failed constraints; re-optimizing...")
+                        break
+
+                candidate_controls.append((u.copy(), obj_val))
+
+            # If all attempts failed, use least-bad control
+            if not control_success:
+                best_u, _ = min(candidate_controls, key=lambda x: x[1])
+                u = best_u
+                if verbose:
+                    print(f"⚠️  Using least-bad control: {u}")
+            else:
+                if verbose:
+                    print(f"✅ Control successful at attempt {attempt_count}: {u}")
+
+            # Apply control
+            X_post = X_sample + u
+            dx_true = lorenz63(0, X_post, sigma, rho, beta)
+            X = X_post + dt * np.array(dx_true)
+
+        traj.append(X.copy())
+        u_record.append(u.copy())
+
+    return (np.array(traj), np.array(u_record),
+            np.array(lle_record), np.array(opt_time_list))
+
+
+# ==============================================================================
+# Visualization Functions
+# ==============================================================================
+
+def plot_trajectories_comparison(traj_natural, traj_controlled,
+                                 title1="Natural Lorenz-63",
+                                 title2="Controlled Lorenz-63",
+                                 figsize=(14, 6)):
+    """
+    Plot natural vs controlled trajectories side by side.
+
+    Parameters
+    ----------
+    traj_natural : ndarray, shape (n, 3)
+        Natural trajectory
+    traj_controlled : ndarray, shape (n, 3)
+        Controlled trajectory
+    title1, title2 : str
+        Plot titles
+    figsize : tuple
+        Figure size
+    """
+    fig = plt.figure(figsize=figsize)
+
+    # Natural trajectory
+    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
+    ax1.plot(traj_natural[:, 0], traj_natural[:, 1], traj_natural[:, 2])
+    ax1.set_title(title1)
+    ax1.set_xlabel("X")
+    ax1.set_ylabel("Y")
+    ax1.set_zlabel("Z")
+
+    # Controlled trajectory
+    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+    ax2.plot(traj_controlled[:, 0], traj_controlled[:, 1], traj_controlled[:, 2])
+    ax2.set_title(title2)
+    ax2.set_xlabel("X")
+    ax2.set_ylabel("Y")
+    ax2.set_zlabel("Z")
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_control_analysis(u_record, lle_record, traj, dt):
+    """
+    Plot control effort and energy analysis.
+
+    Parameters
+    ----------
+    u_record : ndarray, shape (n, 3)
+        Control perturbations
+    lle_record : ndarray, shape (n,)
+        LLE values
+    traj : ndarray, shape (n+1, 3)
+        State trajectory
+    dt : float
+        Time step
+    """
+    control_mag = np.linalg.norm(u_record, axis=1)
+    energy_traj = np.sum(traj**2, axis=1)
+    energy_pert = control_mag**2
+    perturb_total_energy_ratio = (energy_pert / energy_traj[1:]) * 100
+    time_steps = np.arange(len(control_mag))
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Control magnitude
+    axes[0, 0].plot(control_mag, color='tab:blue')
+    axes[0, 0].set_xlabel("Time Step")
+    axes[0, 0].set_ylabel("Perturbation Magnitude")
+    axes[0, 0].set_title("Control Effort")
+    axes[0, 0].grid(True)
+
+    # Energy ratio
+    axes[0, 1].plot(time_steps, perturb_total_energy_ratio, color='tab:blue')
+    axes[0, 1].set_xlabel("Time Step")
+    axes[0, 1].set_ylabel("Control Energy / Total Energy (%)")
+    axes[0, 1].set_title("Relative Control Energy")
+    axes[0, 1].grid(True)
+
+    # Control + LLE
+    ax1 = axes[1, 0]
+    color1 = 'tab:blue'
+    ax1.set_xlabel("Time Step")
+    ax1.set_ylabel("Perturbation Magnitude", color=color1)
+    ax1.plot(control_mag, color=color1)
+    ax1.tick_params(axis='y', labelcolor=color1)
+
+    ax2 = ax1.twinx()
+    color2 = 'tab:red'
+    ax2.set_ylabel("Max LLE", color=color2)
+    ax2.plot(lle_record, color=color2, linestyle='--')
+    ax2.tick_params(axis='y', labelcolor=color2)
+    ax1.set_title("Control Magnitude vs LLE")
+    ax1.grid(True)
+
+    # State components
+    axes[1, 1].plot(traj[:, 0], label='X', alpha=0.7)
+    axes[1, 1].plot(traj[:, 1], label='Y', alpha=0.7)
+    axes[1, 1].plot(traj[:, 2], label='Z', alpha=0.7)
+    axes[1, 1].set_xlabel("Time Step")
+    axes[1, 1].set_ylabel("State Value")
+    axes[1, 1].set_title("State Components")
+    axes[1, 1].legend()
+    axes[1, 1].grid(True)
+
+    plt.tight_layout()
+
+    # Print statistics
+    print("\n" + "="*60)
+    print("CONTROL STATISTICS")
+    print("="*60)
+    print(f"Total control magnitude:       {np.sum(control_mag):.4f}")
+    print(f"Non-zero control steps:        {np.count_nonzero(control_mag)}")
+    print(f"Control frequency:             {np.count_nonzero(control_mag)/len(control_mag)*100:.2f}%")
+    print(f"Total control energy:          {np.sum(energy_pert):.4f}")
+    print(f"Total trajectory energy:       {np.sum(energy_traj):.4f}")
+    print(f"Energy ratio:                  {np.sum(energy_pert)/np.sum(energy_traj)*100:.4f}%")
+    print(f"Mean control magnitude:        {np.mean(control_mag):.4f}")
+    print(f"Max control magnitude:         {np.max(control_mag):.4f}")
+    print("="*60)
+
+    return fig
+
+
+def compute_bounds_violation(traj, ranges):
+    """
+    Compute percentage of trajectory outside bounds.
+
+    Parameters
+    ----------
+    traj : ndarray, shape (n, 3)
+        Trajectory
+    ranges : list of tuples
+        Bounds [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
+
+    Returns
+    -------
+    dict
+        Violation percentages for each dimension
+    """
+    violations = {}
+    var_names = ['x', 'y', 'z']
+
+    for i, (low, high) in enumerate(ranges):
+        var = traj[:, i]
+        out_count = np.sum((var < low) | (var > high))
+        out_pct = (out_count / len(var)) * 100
+        violations[var_names[i]] = out_pct
+
+    return violations
+
+
+# ==============================================================================
+# Example Usage Function
+# ==============================================================================
+
+def run_example(X_init=None, total_steps=2000, dt=0.01, verbose=True):
+    """
+    Run a complete example of Lorenz-63 hybrid control.
+
+    Parameters
+    ----------
+    X_init : array-like, optional
+        Initial state. Default: [1.0, 1.0, 1.0]
+    total_steps : int
+        Number of simulation steps
+    dt : float
+        Time step
+    verbose : bool
+        Print progress
+
+    Returns
+    -------
+    dict
+        Results containing trajectories, controls, model, etc.
+    """
+    if X_init is None:
+        X_init = np.array([1.0, 1.0, 1.0])
+
+    print("\n" + "="*60)
+    print("LORENZ-63 HYBRID CONTROL EXAMPLE")
+    print("="*60 + "\n")
+
+    # 1. Train surrogate model
+    print("Step 1: Training surrogate model...")
+    ridge, poly, training_data = train_surrogate_model()
+
+    # 2. Set control parameters
+    ranges = [(0.5, 10), (0.5, 20), (0.5, 40)]  # x, y, z bounds
+    max_perturbation = 2.0
+    lle_threshold = 0.0
+    steps_ahead_opt = 10
+    steps_ahead_check = 8
+    ensemble_size = 20
+    noise_level = 0.1
+    max_attempts = 5
+    noise_std = 0.01
+
+    print(f"\nStep 2: Running hybrid control simulation...")
+    print(f"  Initial state:       {X_init}")
+    print(f"  Total steps:         {total_steps}")
+    print(f"  Time step:           {dt}")
+    print(f"  LLE threshold:       {lle_threshold}")
+    print(f"  Max perturbation:    {max_perturbation}")
+    print(f"  Bounds (x, y, z):    {ranges}\n")
+
+    # 3. Run controlled simulation
+    start_time = time.time()
+    traj, u_record, lle_record, opt_time_list = simulate_hybrid_l63_control(
+        X_init=X_init,
+        ridge=ridge,
+        poly=poly,
+        dt=dt,
+        total_steps=total_steps,
+        ranges=ranges,
+        max_perturbation=max_perturbation,
+        lle_threshold=lle_threshold,
+        steps_ahead_opt=steps_ahead_opt,
+        steps_ahead_check=steps_ahead_check,
+        ensemble_size=ensemble_size,
+        noise_level=noise_level,
+        max_attempts=max_attempts,
+        noise_std=noise_std,
+        verbose=verbose
+    )
+    simulation_time = time.time() - start_time
+
+    # 4. Run natural simulation for comparison
+    print("\nStep 3: Running natural simulation for comparison...")
+    t_eval = np.linspace(0, (total_steps) * dt, total_steps + 1)
+    sol_nat = solve_ivp(lorenz63, (0, t_eval[-1]), X_init, t_eval=t_eval)
+    traj_natural = sol_nat.y.T
+
+    # 5. Compute statistics
+    violations = compute_bounds_violation(traj, ranges)
+
+    print(f"\n✓ Simulation completed in {simulation_time:.2f} seconds")
+    if len(opt_time_list) > 0:
+        print(f"  Avg optimization time: {np.mean(opt_time_list):.4f} s")
+        print(f"  Total optimization time: {np.sum(opt_time_list):.2f} s")
+
+    print(f"\nBounds violations:")
+    for var, pct in violations.items():
+        print(f"  {var}: {pct:.2f}%")
+
+    # 6. Plot results
+    print("\nStep 4: Generating plots...")
+    fig1 = plot_trajectories_comparison(traj_natural, traj,
+                                       title1="Natural Lorenz-63",
+                                       title2="Controlled Lorenz-63")
+
+    fig2 = plot_control_analysis(u_record, lle_record, traj, dt)
+
+    plt.show()
+
+    # Return all results
+    results = {
+        'traj_controlled': traj,
+        'traj_natural': traj_natural,
+        'u_record': u_record,
+        'lle_record': lle_record,
+        'opt_time_list': opt_time_list,
+        'ridge': ridge,
+        'poly': poly,
+        'violations': violations,
+        'simulation_time': simulation_time
+    }
+
+    return results
+
+
+# ==============================================================================
+# Main Entry Point
+# ==============================================================================
+
+if __name__ == "__main__":
+    # Run example with default parameters
+    results = run_example(
+        X_init=np.array([1.0, 1.0, 1.0]),
+        total_steps=2000,
+        dt=0.01,
+        verbose=True
+    )
+
+    print("\n" + "="*60)
+    print("Example completed successfully!")
+    print("="*60)
