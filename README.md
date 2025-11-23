@@ -13,12 +13,10 @@ This package implements an adaptive control strategy that:
 
 ## Features
 
-- ✅ Data-driven surrogate modeling with polynomial features
 - ✅ Adaptive control activation via LLE monitoring
 - ✅ Noise-aware predictive control optimization
 - ✅ Ensemble-based uncertainty handling
 - ✅ Comprehensive visualization tools
-- ✅ Easy-to-use API with sensible defaults
 
 ## Installation
 
@@ -134,7 +132,7 @@ The optimized perturbation `u` is applied to the current state, and the system e
 | `ensemble_size` | Number of ensemble members | 20 |
 | `noise_level` | Ensemble perturbation std | 0.1 |
 | `noise_std` | Observation noise std | 0.01 |
-| `ranges` | State bounds (x, y, z) | [(0.5,10), (0.5,20), (0.5,40)] |
+| `ranges` | State bounds (x, y, z) | [(0,10), (0,20), (0,40)] |
 
 ## Examples
 
@@ -159,8 +157,7 @@ lorenz63-control/
 ├── lorenz63_control.py    # Main module with all functions
 ├── examples.py            # Example scripts and tutorials
 ├── README.md              # This file
-├── requirements.txt       # Python dependencies
-└── L63_all.ipynb         # Original research notebook
+└── requirements.txt       # Python dependencies
 ```
 
 ## API Reference
@@ -179,23 +176,6 @@ lorenz63-control/
 - **`plot_control_analysis(...)`**: Analyze control effort and energy
 - **`compute_bounds_violation(...)`**: Calculate constraint violation statistics
 
-### Convenience Functions
-
-- **`run_example(...)`**: Complete example with default parameters
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@software{lorenz63_control,
-  author = {Liu, Moyan},
-  title = {Lorenz-63 Hybrid Control System},
-  year = {2024},
-  url = {https://github.com/yourusername/lorenz63-control}
-}
-```
-
 ## License
 
 MIT License - see LICENSE file for details
@@ -206,8 +186,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Contact
 
-For questions or issues, please open an issue on GitHub or contact [your email].
+For questions or issues, please open an issue on GitHub or contact [moyanliu@asu.edu].
 
-## Acknowledgments
-
-This work implements hybrid control strategies for chaotic systems based on data-driven modeling and local stability analysis.
