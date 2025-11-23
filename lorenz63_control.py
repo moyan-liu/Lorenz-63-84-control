@@ -364,7 +364,7 @@ def run_example(X_init=None, total_steps=2000, dt=0.01, verbose=True):
     ridge, poly, training_data = train_surrogate_model()
 
     # 2. Set control parameters
-    ranges = [(0.5, 10), (0.5, 20), (0.5, 40)]  # x, y, z bounds
+    ranges = [(0, 10), (0, 20), (0, 40)]  # x, y, z bounds
     max_perturbation = 2.0
     lle_threshold = 0.0
     steps_ahead_opt = 10
