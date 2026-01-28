@@ -1,4 +1,4 @@
-# Hybrid Control for Lorenz Systems
+# Control for Lorenz Systems
 
 Data-driven hybrid control frameworks for the **Lorenz-63** and **Lorenz-84** chaotic systems using local Lyapunov exponent (LLE) based switching and ensemble optimization.
 
