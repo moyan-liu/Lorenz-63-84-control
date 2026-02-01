@@ -66,20 +66,19 @@ def train_surrogate_model(t_end=100.0, dt=0.01, initial_state=None,
 # Local Lyapunov Exponent
 # ==============================================================================
 
-def jacobian_lle(x, ridge, poly, dt, eps=1e-5):
+def jacobian_lle(x, poly, ridge, eps=1e-5):
 
-    J = np.zeros((3, 3))
+    J = np.zeros((3, 3), dtype=float)
     for i in range(3):
         dx = np.zeros(3)
         dx[i] = eps
-        f_plus = ridge.predict(poly.transform([x + dx]))[0]
+        f_plus  = ridge.predict(poly.transform([x + dx]))[0]
         f_minus = ridge.predict(poly.transform([x - dx]))[0]
         J[:, i] = (f_plus - f_minus) / (2 * eps)
 
-    lle = max(np.real(np.linalg.eigvals(J)))
+    S = 0.5 * (J + J.T)
+    lle = np.max(np.linalg.eigvalsh(S))
     return lle
-
-
 # ==============================================================================
 # Control Optimization
 # ==============================================================================
@@ -89,7 +88,6 @@ def control_optimization_with_noise(X_sample, ridge, poly, ranges, dt,
                                    penalty_weight=100.0):
 
     def forecast_with_noise(u):
-        """Forecast trajectory with control and noise."""
         state = X_sample + u
         traj = []
 
@@ -152,7 +150,6 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
     opt_time_list = []
 
     for step in range(total_steps):
-        # Compute local Lyapunov exponent
         lle = jacobian_lle(X, ridge, poly, dt)
         lle_record.append(lle)
 
@@ -165,7 +162,7 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
             X += dt * np.array(dx)
             u = np.zeros(3)
             if verbose:
-                print(f"✅ Natural run at step {step+1}")
+                print(f"Natural run at step {step+1}")
 
         else:
             # Control needed - optimize perturbation
@@ -184,7 +181,7 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
                 X_sample = ensemble[np.random.choice(ensemble_size)]
 
                 if verbose:
-                    print(f"🔁 Optimization attempt {attempt_count}...")
+                    print(f"Optimization attempt {attempt_count}...")
 
                 # Optimize control
                 start_time = time.time()
@@ -205,7 +202,7 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
                              for i, (low, high) in enumerate(ranges)):
                         control_success = False
                         if verbose:
-                            print(f"🔄 Attempt {attempt_count} failed constraints; re-optimizing...")
+                            print(f"Attempt {attempt_count} failed constraints; re-optimizing...")
                         break
 
                 candidate_controls.append((u.copy(), obj_val))
@@ -215,10 +212,10 @@ def simulate_hybrid_l63_control(X_init, ridge, poly, dt, total_steps,
                 best_u, _ = min(candidate_controls, key=lambda x: x[1])
                 u = best_u
                 if verbose:
-                    print(f"⚠️  Using least-bad control: {u}")
+                    print(f"Using least-bad control: {u}")
             else:
                 if verbose:
-                    print(f"✅ Control successful at attempt {attempt_count}: {u}")
+                    print(f"Control successful at attempt {attempt_count}: {u}")
 
             # Apply control
             X_post = X_sample + u
