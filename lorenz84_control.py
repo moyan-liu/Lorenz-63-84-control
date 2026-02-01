@@ -107,8 +107,8 @@ def jacobian_lle_surrogate(x, ridge, poly, eps=1e-5):
         f_plus = ridge.predict(poly.transform([x + dx]))[0]
         f_minus = ridge.predict(poly.transform([x - dx]))[0]
         J[:, i] = (f_plus - f_minus) / (2 * eps)
-
-    lle = max(np.real(np.linalg.eigvals(J)))
+    S = 0.5 * (J + J.T)
+    lle = np.max(np.linalg.eigvalsh(S))
     return lle
 
 
@@ -117,8 +117,8 @@ def compute_lle_trajectory(traj, F=8.0, G=1.0, a=0.25, b=4.0):
     lle_values = []
     for state in traj:
         J = lorenz84_jacobian(state, F, G, a, b)
-        eigvals = np.linalg.eigvals(J)
-        lle = np.max(np.real(eigvals))
+        S = 0.5 * (J + J.T)
+        lle = np.max(np.linalg.eigvalsh(S))
         lle_values.append(lle)
     return np.array(lle_values)
 
