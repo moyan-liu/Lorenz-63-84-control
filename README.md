@@ -113,9 +113,6 @@ results = run_example(
     dt=0.01
 )
 
-# Check eddy activity reduction
-print(f"Natural violations: {results['violations_natural']}")
-print(f"Controlled violations: {results['violations_controlled']}")
 ```
 
 ### Lorenz-84: Custom Control
@@ -157,58 +154,6 @@ sol = solve_ivp(lorenz84, [0, 20], [1,1,1], t_eval=np.linspace(0,20,2001))
 traj_nat = sol.y.T
 
 plot_eddy_activity_comparison(traj_nat, traj, dt=0.01, eddy_threshold=2.4)
-```
-
----
-
-## Key Parameters
-
-### Lorenz-63 Parameters
-
-| Parameter | Description | Default | Tuning Guide |
-|-----------|-------------|---------|--------------|
-| `ranges` | Bounds [(x_min,x_max), (y_min,y_max), (z_min,z_max)] | [(0,10), (0,20), (0,40)] | Tighter → more control |
-| `max_perturbation` | Maximum control magnitude | 2.0 | Higher → stronger control |
-| `lle_threshold` | LLE threshold for activation | 0.0 | Lower → more frequent control |
-| `steps_ahead_opt` | Forecast horizon | 10 | Higher → look further ahead |
-| `ensemble_size` | Number of samples | 20 | Higher → more robust |
-| `noise_std` | Observation noise | 0.01 | Match real system noise |
-
-### Lorenz-84 Parameters
-
-| Parameter | Description | Default | Tuning Guide |
-|-----------|-------------|---------|--------------|
-| `eddy_threshold` | Maximum \|y\|+\|z\| | 2.4 | Lower → tighter control |
-| `max_perturbation` | Maximum control magnitude | 0.3 | Smaller than L63 |
-| `lle_threshold` | LLE threshold for activation | 2.3 | Higher than L63 |
-| `steps_ahead_opt` | Forecast horizon | 10 | Same as L63 |
-| `ensemble_size` | Number of samples | 20 | Same as L63 |
-| `noise_std` | Observation noise | 0.001 | Lower than L63 |
-
----
-
-## Performance Benchmarks
-
-### Lorenz-63 Results (2000 steps, dt=0.01)
-
-```
-✓ Training time:         ~0.5 seconds
-✓ Simulation time:       ~40-60 seconds
-✓ Avg optimization:      ~0.02-0.14 seconds per control
-✓ Control frequency:     ~20-25% of timesteps
-✓ Bounds violations:     7.4% → <1% (natural → controlled)
-✓ Control energy ratio:  <1% of total system energy
-```
-
-### Lorenz-84 Results (2000 steps, dt=0.01)
-
-```
-✓ Training time:         ~0.5 seconds
-✓ Simulation time:       ~80-120 seconds
-✓ Avg optimization:      ~0.05-0.15 seconds per control
-✓ Control frequency:     ~60-70% of timesteps
-✓ Eddy violations:       35% → <5% (natural → controlled)
-✓ Control energy ratio:  <2% of total system energy
 ```
 
 
